@@ -1,0 +1,5 @@
+node_modules/
+artifacts/
+*.zip
+*.log
+.DS_Store

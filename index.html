@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f6efdf">
+  <meta name="description" content="腕が増える。玉も増える。タイミングに合わせてタップする、スマホ向け千手お手玉。あなたは何個までいける？">
+  <meta property="og:title" content="千手お手玉">
+  <meta property="og:description" content="腕が増える。玉も増える。あなたは何個までいける？">
+  <title>千手お手玉 — あわてず、ひとつ。ときどき、ふたつ。</title>
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <aside class="desktop-note" aria-hidden="true"><span class="note-line"></span><span>指先ひとつ、心をしずめて。</span><span class="note-line"></span></aside>
+  <main id="game" class="game-shell" aria-label="千手お手玉">
+    <canvas id="scene" aria-label="布玉と千手観音のゲーム画面"></canvas>
+    <div class="edge-frame" aria-hidden="true"></div>
+
+    <section id="menu" class="screen menu-screen">
+      <div class="menu-top">
+        <div class="brand-line"><span class="tiny-flower">✺</span><span>指先で、ちいさな修行。</span><span class="tiny-flower">✺</span></div>
+        <p class="eyebrow">SENJU OTEDAMA</p>
+        <h1>千手<span>お手玉</span><i aria-hidden="true">遊</i></h1>
+        <p class="tagline">あわてず、ひとつ。<br>ときどき、ふたつ。</p>
+      </div>
+      <div class="menu-bottom">
+        <p class="best-line"><span>これまでの最高</span><strong id="menu-best">—</strong><span>個</span></p>
+        <button id="start" class="button primary"><span>お手玉をはじめる</span><span class="button-arrow" aria-hidden="true">↗</span></button>
+        <button id="how" class="text-button">あそびかた <span aria-hidden="true">＋</span></button>
+        <p class="device-note">スマホはタップ · PCはスペースキー</p>
+      </div>
+    </section>
+
+    <section id="hud" class="hud" hidden aria-label="プレイ状況">
+      <div class="hud-top">
+        <div class="ball-count"><span class="eyebrow">いまのお手玉</span><div><strong id="balls">2</strong><span>個</span></div></div>
+        <div class="hud-right"><p class="record-label">最高 <strong id="best">—</strong> 個</p><button id="pause" class="icon-button" aria-label="一時停止"><span aria-hidden="true">Ⅱ</span></button></div>
+      </div>
+      <div class="level-progress"><div id="progress"></div></div>
+      <p id="level-label" class="level-label">あと8回で、玉がひとつ増えます</p>
+      <div id="feedback" class="feedback" aria-live="polite"></div>
+      <div class="play-bottom">
+        <p id="fingers" class="finger-chip"><span class="pulse-dot"></span><span>輪が小さくなったらタップ</span></p>
+        <p id="combo" class="combo">どこをタップしても大丈夫</p>
+      </div>
+    </section>
+
+    <section id="result" class="screen result-screen" hidden aria-label="プレイ結果">
+      <div class="result-card">
+        <p class="eyebrow">おつかれさまでした</p>
+        <h2>本日の修行</h2>
+        <div class="result-count"><strong id="result-balls">2</strong><span>個まで到達</span></div>
+        <p id="result-title" class="result-title">微笑みの観音</p>
+        <p id="new-record" class="new-record" hidden>✦ 自己ベスト更新 ✦</p>
+        <div class="result-stats"><div><span>投げ返した数</span><strong id="result-catches">0<span>回</span></strong></div><div><span>最高記録</span><strong id="result-best">2<span>個</span></strong></div></div>
+        <button id="retry" class="button primary"><span>もう一度、挑戦する</span><span aria-hidden="true">↗</span></button>
+        <div class="share-actions"><button id="save" class="button secondary">画像を保存 <span aria-hidden="true">↓</span></button><a id="share" class="button secondary" target="_blank" rel="noopener noreferrer">𝕏 に投稿 <span aria-hidden="true">↗</span></a></div>
+        <p class="share-note">投稿に画像を添えるときは、保存したPNGを<br>ご自身で添付してください。</p>
+        <button id="home" class="text-button">はじめの画面へ</button>
+      </div>
+    </section>
+
+    <section id="rules" class="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="rules-title">
+      <div class="modal-card">
+        <p class="eyebrow">HOW TO PLAY</p><h2 id="rules-title">手はおまかせ。<br>タイミングは、あなた。</h2>
+        <ol class="rules-list">
+          <li><span class="rule-number">一</span><div><strong>輪が小さくなったら、タップ。</strong><p>玉が手に届く瞬間に、画面のどこでも。<br>動く腕は自動で決まります。</p></div></li>
+          <li><span class="rule-number">二</span><div><strong>同時に2個なら、2本指。</strong><p>輪が2つなら2本、3つなら3本の指で<br>同時にタップしましょう。</p></div></li>
+          <li><span class="rule-number">三</span><div><strong>ひとつ落としたら、おしまい。</strong><p>8回投げ返すたびに玉が増えます。<br>腕と表情の変化もお楽しみに。</p></div></li>
+        </ol>
+        <p class="rules-footnote">指をいったん離してから、次のタップへ。<br>PCはスペースキーで1本指相当の操作ができます。</p>
+        <button id="close-rules" class="button primary">わかりました <span aria-hidden="true">✓</span></button>
+      </div>
+    </section>
+
+    <section id="paused" class="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="paused-title">
+      <div class="modal-card pause-card"><p class="eyebrow">ひと呼吸</p><h2 id="paused-title">心をしずめて。</h2><p>準備ができたら、続きをどうぞ。</p><button id="resume" class="button primary">お手玉をつづける <span aria-hidden="true">↗</span></button><button id="quit" class="text-button">はじめの画面へ</button></div>
+    </section>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <noscript><p class="noscript">このゲームを遊ぶには、ブラウザのJavaScriptを有効にしてください。</p></noscript>
+  </main>
+  <aside class="desktop-note right-note" aria-hidden="true"><span>一</span><span>手</span><span>一</span><span>会</span><small>ちいさなブラウザゲーム</small></aside>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
