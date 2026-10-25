@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GameEngine, getTitle, HIT_WINDOW, CHORD_WINDOW, INITIAL_FLIGHT } from '../game.js';
+import { GameEngine, getTitle, HIT_WINDOW, CHORD_WINDOW, INITIAL_FLIGHT,
+  CATCHES_PER_LEVEL } from '../game.js';
 
 function makeEngine(random = () => 0.4) {
   const emitted = [];
@@ -37,12 +38,15 @@ function assertPhysicalBalls(engine) {
     assert.equal(event.lanes.length, event.ballIds.length);
     assert.equal(event.fromLanes.length, event.ballIds.length);
     assert.equal(event.launchTimes.length, event.ballIds.length);
+    assert.equal(event.holdStarts.length, event.ballIds.length);
+    assert.equal(event.catchTimes.length, event.ballIds.length);
     assert.equal(new Set(event.lanes).size, event.lanes.length, 'a hand catches only one ball in a group');
     for (let index = 0; index < event.ballIds.length; index += 1) {
       assert.ok(event.lanes[index] >= 0 && event.lanes[index] < engine.arms);
       assert.ok(event.fromLanes[index] >= 0 && event.fromLanes[index] < engine.arms);
       assert.notEqual(event.fromLanes[index] % 2, event.lanes[index] % 2);
-      assert.ok(event.due - event.launchTimes[index] >= 1050 - 1e-7);
+      assert.ok(event.holdStarts[index] === null || event.holdStarts[index] <= event.launchTimes[index]);
+      assert.ok(event.due - event.launchTimes[index] >= 2000 - 1e-7);
       if (!event.caught[index]) inPlay.push(event.ballIds[index]);
     }
   }
@@ -52,7 +56,7 @@ function assertPhysicalBalls(engine) {
   const dueTimes = pending(engine).map(event => event.due);
   assert.deepEqual([...dueTimes].sort((a, b) => a - b), dueTimes);
   for (let index = 1; index < dueTimes.length; index += 1) {
-    assert.ok(dueTimes[index] - dueTimes[index - 1] >= 160 - 1e-7);
+    assert.ok(dueTimes[index] - dueTimes[index - 1] >= 700 - 1e-7);
   }
 }
 
@@ -65,8 +69,8 @@ test('start has two real crossing balls with complete flights and resettable sta
   assert.deepEqual(engine.events.map(event => event.ballIds), [[1], [2]]);
   assert.deepEqual(engine.events.map(event => event.fromLanes), [[1], [0]]);
   assert.deepEqual(engine.events.map(event => event.lanes), [[0], [1]]);
-  assert.deepEqual(engine.events.map(event => event.launchTimes), [[-900], [0]]);
-  assert.deepEqual(engine.events.map(event => event.due), [900, 1800]);
+  assert.deepEqual(engine.events.map(event => event.launchTimes), [[-1100], [500]]);
+  assert.deepEqual(engine.events.map(event => event.due), [2100, 3700]);
   assert.ok(engine.events.every(event => event.due - event.created === INITIAL_FLIGHT));
   assertPhysicalBalls(engine);
   catchNext(engine);
@@ -77,6 +81,28 @@ test('start has two real crossing balls with complete flights and resettable sta
   assert.equal(engine.maxCombo, 0);
   assert.deepEqual(engine.events, []);
   assert.deepEqual(engine.ballStates, []);
+});
+
+test('the opening gives two seconds to read the first ball before it can be missed', () => {
+  const { engine } = makeEngine();
+  engine.start();
+  engine.update(2000);
+  assert.equal(engine.phase, 'playing');
+  assert.equal(engine.catches, 0);
+  assert.equal(nextEvent(engine).due, 2100);
+  assert.equal(engine.tap(), true);
+  assert.equal(engine.catches, 1);
+});
+
+test('a tap 220 ms early or late now catches the ball', () => {
+  for (const offset of [-220, 220]) {
+    const { engine } = makeEngine();
+    engine.start();
+    assert.equal(catchNext(engine, { offset }), true);
+    assert.equal(engine.phase, 'playing');
+    assert.equal(engine.catches, 1);
+    assertPhysicalBalls(engine);
+  }
 });
 
 test('a caught ball leaves that same hand for the opposite side with the same identity and pattern', () => {
@@ -93,7 +119,7 @@ test('a caught ball leaves that same hand for the opposite side with the same id
       assert.equal(next.fromLanes[index], ball.hand);
       assert.notEqual(next.lanes[index] % 2, ball.hand % 2);
       assert.equal(engine.ballStates.find(item => item.id === ball.id).variant, ball.variant);
-      assert.ok(next.launchTimes[index] >= engine.time + 80 - 1e-7);
+      assert.ok(next.launchTimes[index] >= engine.time + 180 - 1e-7);
     }
     assertPhysicalBalls(engine);
   }
@@ -108,8 +134,9 @@ test('both exact timing boundaries count as catches and return full flights', ()
     assert.equal(engine.catches, 1);
     assert.equal(emitted.find(event => event.type === 'catch').accuracy, 0);
     const returned = pending(engine).find(event => event.ballIds.includes(1));
-    assert.ok(returned.launchTimes[0] >= engine.time + 80);
+    assert.ok(returned.launchTimes[0] >= engine.time + 180);
     assert.equal(returned.due - returned.launchTimes[0], INITIAL_FLIGHT);
+    assert.equal(returned.holdStarts[0], engine.time);
     assertPhysicalBalls(engine);
   }
 });
@@ -142,13 +169,14 @@ test('one missed ball stops at its exact deadline even during a long frame', () 
   assert.equal(engine.catches, 0);
 });
 
-test('every eight successful catches introduces exactly one new physical ball', () => {
+test('every twelve successful catches introduces exactly one new physical ball', () => {
   const { engine, emitted } = makeEngine();
   engine.start();
   let previous = 2;
   while (engine.balls < 35) {
     catchNext(engine);
-    assert.equal(engine.balls, 2 + Math.floor(engine.catches / 8));
+    assert.equal(CATCHES_PER_LEVEL, 12);
+    assert.equal(engine.balls, 2 + Math.floor(engine.catches / CATCHES_PER_LEVEL));
     if (engine.balls !== previous) {
       assert.equal(engine.balls, previous + 1);
       previous = engine.balls;
@@ -157,6 +185,55 @@ test('every eight successful catches introduces exactly one new physical ball', 
     assertPhysicalBalls(engine);
   }
   assert.equal(emitted.filter(event => event.type === 'level').length, 33);
+});
+
+test('the first level waits for the twelfth catch and keeps at least 700 ms between arrivals', () => {
+  const { engine, emitted } = makeEngine();
+  engine.start();
+  for (let count = 1; count <= 11; count += 1) {
+    assert.equal(catchNext(engine), true);
+    assert.equal(engine.balls, 2);
+  }
+  assert.equal(emitted.some(event => event.type === 'level'), false);
+  assert.equal(catchNext(engine), true);
+  assert.equal(engine.catches, 12);
+  assert.equal(engine.balls, 3);
+  let previousDue = engine.time;
+  for (let round = 0; round < 300; round += 1) {
+    const next = nextEvent(engine);
+    assert.ok(next.due - previousDue >= 700 - 1e-7);
+    previousDue = next.due;
+    assert.equal(catchNext(engine), true);
+    assertPhysicalBalls(engine);
+  }
+});
+
+test('a latest-legal catch followed by the next earliest-legal catch clears the chord input lock', () => {
+  const { engine } = makeEngine();
+  engine.start();
+  let adjacent;
+  for (let round = 0; round < 300; round += 1) {
+    const [first, second] = pending(engine);
+    if (second && Math.abs(second.due - first.due - 700) < 1e-7) {
+      adjacent = { first, second };
+      break;
+    }
+    assert.equal(catchNext(engine), true);
+  }
+  assert.ok(adjacent, 'the simulation reaches its shortest arrival interval');
+  const { first, second } = adjacent;
+  const firstDue = first.due;
+  const secondDue = second.due;
+  const latestFirstCatch = firstDue + HIT_WINDOW;
+  const earliestSecondCatch = secondDue - HIT_WINDOW;
+  assert.ok(earliestSecondCatch - latestFirstCatch > CHORD_WINDOW);
+  engine.update(latestFirstCatch - engine.time);
+  assert.equal(engine.tap(first.lanes.length), true);
+  assert.equal(second.due, secondDue, 'returning the first ball never moves an existing arrival');
+  engine.update(earliestSecondCatch - engine.time);
+  assert.equal(engine.tap(second.lanes.length), true);
+  assert.equal(engine.phase, 'playing');
+  assertPhysicalBalls(engine);
 });
 
 test('the two-finger tier joins two distinct balls and keeps that group on return', () => {
@@ -177,7 +254,7 @@ test('the two-finger tier joins two distinct balls and keeps that group on retur
   assertPhysicalBalls(engine);
 });
 
-test('separate pointer inputs exactly 40 ms apart form one chord without duplicate flights', () => {
+test('separate pointer inputs exactly 100 ms apart form one chord without duplicate flights', () => {
   const { engine } = makeEngine();
   engine.start();
   reachBalls(engine, 7);
@@ -186,15 +263,34 @@ test('separate pointer inputs exactly 40 ms apart form one chord without duplica
   const catches = engine.catches;
   assert.equal(engine.tap(), false);
   assert.deepEqual(chord.caught, [true, false]);
+  assert.deepEqual(chord.catchTimes, [chord.due, null]);
   assert.equal(engine.catches, catches);
   assertPhysicalBalls(engine);
   engine.update(CHORD_WINDOW);
   assert.equal(engine.tap(), true);
   assert.equal(engine.catches, catches + 2);
+  assert.deepEqual(chord.catchTimes, [chord.due, chord.due + CHORD_WINDOW]);
+  const returned = pending(engine).find(event => event.id === chord.returnEventId);
+  assert.deepEqual(returned.holdStarts, chord.catchTimes);
   assertPhysicalBalls(engine);
 });
 
-test('an incomplete chord misses exactly 40 ms after its first finger', () => {
+test('an 80 ms delay between two fingers is accepted inside the relaxed chord window', () => {
+  const { engine } = makeEngine();
+  engine.start();
+  reachBalls(engine, 7);
+  const chord = nextChord(engine, 2);
+  engine.update(chord.due - engine.time);
+  const catches = engine.catches;
+  assert.equal(engine.tap(), false);
+  engine.update(80);
+  assert.equal(engine.phase, 'playing');
+  assert.equal(engine.tap(), true);
+  assert.equal(engine.catches, catches + 2);
+  assertPhysicalBalls(engine);
+});
+
+test('an incomplete chord misses exactly 100 ms after its first finger', () => {
   const { engine, emitted } = makeEngine();
   engine.start();
   reachBalls(engine, 7);
@@ -208,7 +304,7 @@ test('an incomplete chord misses exactly 40 ms after its first finger', () => {
   assert.equal(engine.tap(), false);
 });
 
-test('a late chord still respects the outer 145 ms catch deadline', () => {
+test('a late chord still respects the outer 280 ms catch deadline', () => {
   const { engine } = makeEngine();
   engine.start();
   reachBalls(engine, 7);
@@ -224,7 +320,7 @@ test('extra fingers cannot pre-catch another arrival or manufacture balls', () =
   const { engine } = makeEngine();
   engine.start();
   const second = engine.events[1];
-  engine.update(900);
+  engine.update(nextEvent(engine).due);
   engine.tap(3);
   engine.tap(3);
   assert.equal(engine.catches, 1);
@@ -264,7 +360,7 @@ test('early and late catches through crowded tiers keep complete flights and sep
   let seed = 21;
   const { engine } = makeEngine(() => ((seed = seed * 16807 % 2147483647) - 1) / 2147483646);
   engine.start();
-  for (let attempt = 0; attempt < 350 && engine.balls < 35; attempt += 1) {
+  for (let attempt = 0; attempt < 500 && engine.balls < 35; attempt += 1) {
     const next = nextEvent(engine);
     const desired = attempt % 3 === 0 ? HIT_WINDOW : attempt % 3 === 1 ? -HIT_WINDOW : 0;
     const target = Math.max(next.due + desired, engine.time + CHORD_WINDOW + 1);
@@ -273,8 +369,8 @@ test('early and late catches through crowded tiers keep complete flights and sep
     assert.equal(engine.phase, 'playing');
     assertPhysicalBalls(engine);
     for (const event of engine.events.filter(event => !priorIds.has(event.id))) {
-      assert.ok(event.launchTimes.every(launch => launch >= engine.time + 80 - 1e-7));
-      assert.ok(event.launchTimes.every(launch => event.due - launch >= 1050 - 1e-7));
+      assert.ok(event.launchTimes.every(launch => launch >= engine.time + 180 - 1e-7));
+      assert.ok(event.launchTimes.every(launch => event.due - launch >= 2000 - 1e-7));
     }
   }
   assert.ok(engine.balls >= 35);

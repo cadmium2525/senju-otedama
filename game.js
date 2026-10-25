@@ -1,11 +1,12 @@
 /** The simulation uses milliseconds, independently of the rendering frame rate. */
-export const HIT_WINDOW = 145;
-export const CHORD_WINDOW = 40;
-export const INITIAL_FLIGHT = 1800;
+export const HIT_WINDOW = 280;
+export const CHORD_WINDOW = 100;
+export const INITIAL_FLIGHT = 3200;
+export const CATCHES_PER_LEVEL = 12;
 
 const EPSILON = 1e-7;
-const HOLD_DELAY = 80;
-const MIN_GESTURE_GAP = 160;
+const HOLD_DELAY = 180;
+const MIN_GESTURE_GAP = 700;
 
 export function getTitle(balls) {
   if (balls >= 12) return '滝汗の観音';
@@ -43,9 +44,10 @@ export class GameEngine {
     this.phase = 'playing';
     const first = this._newBall();
     const second = this._newBall();
-    // One ball is halfway across; the other leaves the opposite hand now.
-    this._addEvent(900, [{ ballId: first.id, from: 1, to: 0, launch: -900 }]);
-    this._addEvent(1800, [{ ballId: second.id, from: 0, to: 1, launch: 0 }]);
+    // Let the player read the first arc before the opening catch. The second
+    // ball leaves the opposite hand after a short, visible preparation.
+    this._addEvent(2100, [{ ballId: first.id, from: 1, to: 0, launch: -1100 }]);
+    this._addEvent(3700, [{ ballId: second.id, from: 0, to: 1, launch: 500 }]);
     return this;
   }
 
@@ -105,6 +107,7 @@ export class GameEngine {
     for (let index = 0; index < event.caught.length && remaining > 0; index += 1) {
       if (event.caught[index]) continue;
       event.caught[index] = true;
+      event.catchTimes[index] = this.time;
       caughtNow.push(index);
       this._burst.offsets.push(Math.abs(event.due - this.time));
       remaining -= 1;
@@ -124,7 +127,7 @@ export class GameEngine {
     this._emit({ type: 'catch', id: event.id, time: this.time,
       lanes: [...event.lanes], ballIds: [...event.ballIds], count: caughtCount, accuracy });
 
-    const nextBalls = 2 + Math.floor(this.catches / 8);
+    const nextBalls = 2 + Math.floor(this.catches / CATCHES_PER_LEVEL);
     if (nextBalls !== this.balls) {
       this.balls = nextBalls;
       this.arms = Math.min(12, Math.max(2, this.balls));
@@ -159,7 +162,7 @@ export class GameEngine {
       count: event.caught.filter(value => !value).length });
   }
 
-  _flight() { return Math.max(1050, INITIAL_FLIGHT - (this.balls - 2) * 45); }
+  _flight() { return Math.max(2000, INITIAL_FLIGHT - (this.balls - 2) * 40); }
 
   _newBall() {
     const id = this._nextBallId++;
@@ -188,26 +191,29 @@ export class GameEngine {
 
   _addEvent(due, journeys = []) {
     const event = { id: this._nextId++, due, lanes: [], fromLanes: [], ballIds: [],
-      launchTimes: [], caught: [], created: due };
+      launchTimes: [], holdStarts: [], caught: [], catchTimes: [], created: due };
     for (const journey of journeys) this._appendJourney(event, journey);
     this.events.push(event);
     this._sortEvents();
     return event;
   }
 
-  _appendJourney(event, { ballId, from, to, launch }) {
+  _appendJourney(event, { ballId, from, to, launch, caughtAt }) {
     event.ballIds.push(ballId);
     event.fromLanes.push(from);
     event.lanes.push(to);
     event.launchTimes.push(launch);
+    event.holdStarts.push(caughtAt ?? null);
     event.caught.push(false);
+    event.catchTimes.push(null);
     event.created = Math.min(event.created, launch);
   }
 
   _reserveDue(earliest) {
     let due = earliest;
     // Holding a caught ball longer is preferable to an impossibly short flight
-    // or two unrelated gestures less than 160 ms apart.
+    // or two unrelated gestures less than 700 ms apart. Even a latest-legal
+    // catch followed by an earliest-legal catch clears the chord input lock.
     for (const event of this.events) {
       if (!event.caught.some(value => !value)) continue;
       if (due > event.due - MIN_GESTURE_GAP + EPSILON &&
@@ -230,7 +236,8 @@ export class GameEngine {
     }
     for (const index of indices) {
       this._appendJourney(target, { ballId: source.ballIds[index],
-        from: source.lanes[index], to: source.returnLanes[index], launch: target.returnLaunch });
+        from: source.lanes[index], to: source.returnLanes[index], launch: target.returnLaunch,
+        caughtAt: source.catchTimes[index] });
     }
     this._sortEvents();
   }

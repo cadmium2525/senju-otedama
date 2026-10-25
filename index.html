@@ -9,7 +9,7 @@
   <meta property="og:description" content="腕が増える。玉も増える。あなたは何個までいける？">
   <title>千手お手玉 — あわてず、ひとつ。ときどき、ふたつ。</title>
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./style.css?v=3">
 </head>
 <body>
   <aside class="desktop-note" aria-hidden="true"><span class="note-line"></span><span>指先ひとつ、心をしずめて。</span><span class="note-line"></span></aside>
@@ -38,10 +38,10 @@
         <div class="hud-right"><p class="record-label">最高 <strong id="best">—</strong> 個</p><button id="pause" class="icon-button" aria-label="一時停止"><span aria-hidden="true">Ⅱ</span></button></div>
       </div>
       <div class="level-progress"><div id="progress"></div></div>
-      <p id="level-label" class="level-label">あと8回で、玉がひとつ増えます</p>
+      <p id="level-label" class="level-label">あと12回で、玉がひとつ増えます</p>
       <div id="feedback" class="feedback" aria-live="polite"></div>
       <div class="play-bottom">
-        <p id="fingers" class="finger-chip"><span class="pulse-dot"></span><span>輪が小さくなったらタップ</span></p>
+        <p id="fingers" class="finger-chip"><span class="pulse-dot"></span><span>輪が光ったらタップ</span></p>
         <p id="combo" class="combo">どこをタップしても大丈夫</p>
       </div>
     </section>
@@ -65,9 +65,9 @@
       <div class="modal-card">
         <p class="eyebrow">HOW TO PLAY</p><h2 id="rules-title">手はおまかせ。<br>タイミングは、あなた。</h2>
         <ol class="rules-list">
-          <li><span class="rule-number">一</span><div><strong>受け取って、反対の手へ。</strong><p>輪が小さくなった瞬間、どこでもタップ。<br>同じ玉を左右の手で投げ渡します。</p></div></li>
+          <li><span class="rule-number">一</span><div><strong>輪が光ったら、反対の手へ。</strong><p>「いま、タップ！」が出たらどこでも。<br>少し早くても遅くても大丈夫です。</p></div></li>
           <li><span class="rule-number">二</span><div><strong>同時に2個なら、2本指。</strong><p>輪が2つなら2本、3つなら3本の指で<br>同時にタップしましょう。</p></div></li>
-          <li><span class="rule-number">三</span><div><strong>ひとつ落としたら、おしまい。</strong><p>8回投げ返すたびに玉が増えます。<br>腕と表情の変化もお楽しみに。</p></div></li>
+          <li><span class="rule-number">三</span><div><strong>ゆっくり、玉を増やそう。</strong><p>12回投げ返すたびに玉が増えます。<br>ひとつ落としたら、おしまいです。</p></div></li>
         </ol>
         <p class="rules-footnote">指をいったん離してから、次のタップへ。<br>PCはスペースキーで1本指相当の操作ができます。</p>
         <button id="close-rules" class="button primary">わかりました <span aria-hidden="true">✓</span></button>
@@ -81,6 +81,6 @@
     <noscript><p class="noscript">このゲームを遊ぶには、ブラウザのJavaScriptを有効にしてください。</p></noscript>
   </main>
   <aside class="desktop-note right-note" aria-hidden="true"><span>一</span><span>手</span><span>一</span><span>会</span><small>ちいさなブラウザゲーム</small></aside>
-  <script type="module" src="./app.js?v=2"></script>
+  <script type="module" src="./app.js?v=3"></script>
 </body>
 </html>

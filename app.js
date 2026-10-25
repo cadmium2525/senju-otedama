@@ -1,5 +1,5 @@
-import { GameEngine, getTitle } from './game.js?v=2';
-import { GameRenderer } from './renderer.js?v=2';
+import { GameEngine, getTitle, HIT_WINDOW, CATCHES_PER_LEVEL } from './game.js?v=3';
+import { GameRenderer } from './renderer.js?v=3';
 
 const $ = id => document.getElementById(id);
 const shell = $('game');
@@ -47,7 +47,7 @@ function handleGameEvent(event) {
   } else if (event.type === 'level') {
     feedback(`${event.balls}個へ。`, getTitle(event.balls), 1400, true);
   } else if (event.type === 'empty') {
-    feedback('もう少し、待って。', '輪が手に重なる瞬間にタップ', 650);
+    feedback('ゆっくりで、大丈夫。', '輪が光ったらタップ', 650);
   } else if (event.type === 'miss') {
     renderer.burst(event.lanes, false);
     feedback('あっ。', 'ひとつ、こぼれました。', 700, true);
@@ -59,13 +59,18 @@ function handleGameEvent(event) {
 
 function updateHud() {
   $('balls').textContent = engine.balls;
-  $('progress').style.width = `${(engine.catches % 8) / 8 * 100}%`;
-  $('level-label').textContent = `あと${8 - engine.catches % 8}回で、玉がひとつ増えます`;
+  $('progress').style.width = `${(engine.catches % CATCHES_PER_LEVEL) / CATCHES_PER_LEVEL * 100}%`;
+  $('level-label').textContent = `あと${CATCHES_PER_LEVEL - engine.catches % CATCHES_PER_LEVEL}回で、玉がひとつ増えます`;
   $('combo').textContent = engine.catches ? `投げ返した数 ${engine.catches} 回` : 'どこをタップしても大丈夫';
   const next = engine.events.find(event => event.caught.some(value => !value));
-  const fingers = next && next.due - engine.time < 1450 ? next.lanes.length : 1;
-  $('fingers').lastElementChild.textContent = fingers > 1 ? `${fingers}本の指で、同時にタップ` : '輪が小さくなったらタップ';
+  const remain = next ? next.due - engine.time : Infinity;
+  const fingers = remain < 2000 ? next.lanes.length : 1;
+  const ready = engine.phase === 'playing' && Math.abs(remain) <= HIT_WINDOW;
+  $('fingers').lastElementChild.textContent = ready ?
+    (fingers > 1 ? `いま、${fingers}本指でタップ！` : 'いま、タップ！') :
+    (fingers > 1 ? `次は${fingers}本指。輪が光ったら` : '輪が光ったらタップ');
   $('fingers').classList.toggle('multi', fingers > 1);
+  $('fingers').classList.toggle('ready', ready);
 }
 
 function startGame() {
@@ -81,7 +86,7 @@ function startGame() {
   renderer.setResultFace?.(2);
   engine.start();
   lastTick = performance.now();
-  feedback('手に届く、その瞬間。', '画面のどこでもタップ', 1000, true);
+  feedback('ゆっくり、輪を見て。', '光ったら、画面のどこでもタップ', 1300, true);
   updateHud();
   shell.focus({ preventScroll: true });
 }

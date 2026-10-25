@@ -1,6 +1,7 @@
+import { HIT_WINDOW, INITIAL_FLIGHT } from './game.js?v=3';
+
 const W = 420;
 const H = 760;
-const FLIGHT = 1800;
 const INK = '#244f48';
 const GOLD = '#c29b51';
 const CREAM = '#f6efdf';
@@ -10,6 +11,9 @@ const TAU = Math.PI * 2;
 const PALM_ANGLES = [24, -8, 54, 8, 74, 40];
 
 const clamp = (v, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, v));
+const smooth = value => { const t = clamp(value); return t * t * (3 - 2 * t); };
+const mix = (from, to, fraction) => from + (to - from) * smooth(fraction);
+const THROW_RECOVERY = 320;
 
 /** A resolution-independent, deliberately asset-free picture book stage. */
 export class GameRenderer {
@@ -50,10 +54,90 @@ export class GameRenderer {
     return Array.from({ length: Math.min(24, Math.max(2, arms)) }, (_, lane) => this.getLanePosition(lane, arms));
   }
 
+  /** The hand reacts on simulation time, so pausing also pauses the gesture. */
+  getArmPose(lane, engine, time = engine.time || 0) {
+    const base = this.getLanePosition(lane);
+    let dy = 0;
+    for (const event of engine.events || []) {
+      for (let index = 0; index < (event.lanes?.length || 0); index++) {
+        if ((event.fromLanes?.[index] ?? (event.lanes[index] ^ 1)) !== lane) continue;
+        const launch = event.launchTimes?.[index] ?? event.created ?? event.due - INITIAL_FLIGHT;
+        const caughtAt = event.holdStarts?.[index];
+        const offset = this.getThrowOffset(time, launch, caughtAt);
+        // Several balls can use one hand. Keep its gesture small and readable.
+        if (Math.abs(offset) > Math.abs(dy)) dy = offset;
+      }
+    }
+    // A receiving palm returns to its resting position at contact. This also
+    // lets a busy hand receive another ball without bending a flying ball's arc.
+    for (const event of engine.events || []) {
+      for (let index = 0; index < (event.lanes?.length || 0); index++) {
+        if (event.lanes[index] !== lane) continue;
+        const catchTime = event.catchTimes?.[index];
+        if (event.caught?.[index] && Number.isFinite(catchTime) && time >= catchTime) continue;
+        dy *= smooth(Math.abs(time - event.due) / 140);
+      }
+    }
+    dy *= this.motionReduced ? 0.35 : 1;
+    const lift = clamp(-dy / 22);
+    const x = base.x - base.side * lift * 6;
+    const y = base.y + dy;
+    return {
+      ...base, x, y, offsetY: dy,
+      rotation: -base.side * lift * 0.13,
+      shoulder: { x: 210 + base.side * 27, y: 505 + Math.floor(lane / 2) * 2 },
+      elbow: { x: base.x - base.side * (24 + Math.abs(dy) * 0.32), y: base.y + 62 + dy * 0.45 },
+      wrist: { x, y: y + 12 },
+    };
+  }
+
+  getThrowOffset(time, launch, caughtAt) {
+    const sinceThrow = time - launch;
+    if (sinceThrow >= 0) {
+      return sinceThrow <= THROW_RECOVERY ? mix(-22, 0, sinceThrow / THROW_RECOVERY) : 0;
+    }
+    const held = Number.isFinite(caughtAt) ? launch - caughtAt : Infinity;
+    if (held < 360 && time >= caughtAt) {
+      const dipAt = caughtAt + Math.min(70, held * 0.35);
+      const liftAt = Math.max(dipAt, launch - 70);
+      if (time < dipAt) return mix(0, 14, (time - caughtAt) / (dipAt - caughtAt));
+      if (time < liftAt) return mix(14, 10, (time - dipAt) / (liftAt - dipAt));
+      return mix(liftAt > dipAt ? 10 : 14, -22, (time - liftAt) / (launch - liftAt));
+    }
+    if (sinceThrow >= -180) {
+      return sinceThrow < -90 ? mix(0, 10, (sinceThrow + 180) / 90)
+        : mix(10, -22, (sinceThrow + 90) / 90);
+    }
+    if (Number.isFinite(caughtAt) && time >= caughtAt && time <= caughtAt + 180) {
+      return Math.sin((time - caughtAt) / 180 * Math.PI) * 14;
+    }
+    return 0;
+  }
+
+  getDemoEngine(now) {
+    const time = this.motionReduced ? 0 : now;
+    const flight = 3000;
+    const hold = 260;
+    const cycle = flight + hold;
+    const events = [];
+    for (let index = 0; index < 2; index++) {
+      const offset = index * cycle / 2;
+      let turn = Math.floor((time + offset) / cycle);
+      let launch = turn * cycle - offset;
+      if (time >= launch + flight) { turn++; launch += cycle; }
+      const from = ((turn + index) % 2 + 2) % 2;
+      events.push({ due: launch + flight, created: launch,
+        fromLanes: [from], lanes: [from ^ 1], launchTimes: [launch],
+        ballIds: [index + 1], caught: [false], holdStarts: [launch - hold] });
+    }
+    return { phase: 'menu', time, events };
+  }
+
   burst(lanes, success = true) {
     const now = performance.now();
     for (const lane of lanes) {
-      this.effects.push({ ...this.getLanePosition(lane), lane, success, start: now });
+      const pose = this.lastEngine ? this.getArmPose(lane, this.lastEngine) : this.getLanePosition(lane);
+      this.effects.push({ ...pose, lane, success, start: now });
     }
   }
 
@@ -66,11 +150,13 @@ export class GameRenderer {
     c.setTransform(this.sx, 0, 0, this.sy, 0, 0);
     c.clearRect(0, 0, W, H);
     const active = engine.phase === 'playing' || engine.phase === 'paused';
+    const poseEngine = active || engine.phase === 'over' ? engine : this.getDemoEngine(nowMs);
+    this.lastEngine = poseEngine;
     const arms = Math.min(24, Math.max(2, active ? engine.arms || 2 : engine.phase === 'over' ? engine.arms || 2 : 2));
     this.lastArms = arms;
     this.drawBackground(nowMs, active);
     this.drawHalo(nowMs, active);
-    this.drawArms(arms, engine, nowMs);
+    this.drawArms(arms, poseEngine, nowMs);
     this.drawLotus(nowMs);
     this.drawBody();
     this.drawNecklace();
@@ -182,12 +268,9 @@ export class GameRenderer {
 
   drawArms(arms, engine, now) {
     const c = this.ctx;
-    const palms = this.lanePositions(arms);
     for (let lane = arms - 1; lane >= 0; lane--) {
-      const p = palms[lane];
-      const shoulder = { x: 210 + p.side * 27, y: 505 + Math.floor(lane / 2) * 2 };
-      const elbow = { x: p.x - p.side * 24, y: p.y + 62 };
-      const wrist = { x: p.x, y: p.y + 12 };
+      const p = this.getArmPose(lane, engine);
+      const { shoulder, elbow, wrist } = p;
       c.save();
       c.lineCap = 'round';
       c.lineJoin = 'round';
@@ -216,7 +299,7 @@ export class GameRenderer {
       c.lineTo(p.x + 7, p.y + 27);
       c.stroke();
 
-      this.drawHand(p.x, p.y, p.side);
+      this.drawHand(p.x, p.y, p.side, p.rotation);
       c.restore();
     }
   }
@@ -229,7 +312,7 @@ export class GameRenderer {
     const nextDue = new Map();
     for (const event of engine.events || []) {
       const remain = event.due - time;
-      if (remain < -145 || remain > 1000) continue;
+      if (remain < -HIT_WINDOW || remain > 1200) continue;
       for (let index = 0; index < (event.lanes?.length || 0); index++) {
         if (event.caught?.[index]) continue;
         const lane = event.lanes[index];
@@ -237,12 +320,12 @@ export class GameRenderer {
       }
     }
     for (const [lane, remain] of nextDue) {
-      const p = this.getLanePosition(lane, arms);
-      const radius = 14 + 28 * clamp(remain / 1000);
-      const ready = Math.abs(remain) <= 145;
+      const p = this.getArmPose(lane, engine);
+      const radius = 14 + 28 * clamp(remain / 1200);
+      const ready = Math.abs(remain) <= HIT_WINDOW;
       c.save();
       c.lineWidth = ready ? 2.7 : 1.8;
-      c.strokeStyle = ready ? VERMILION : `rgba(164,123,46,${0.38 + 0.48 * (1 - clamp(remain / 1000))})`;
+      c.strokeStyle = ready ? VERMILION : `rgba(164,123,46,${0.38 + 0.48 * (1 - clamp(remain / 1200))})`;
       c.fillStyle = ready ? 'rgba(221,182,101,.13)' : 'rgba(221,182,101,.035)';
       c.beginPath();
       c.arc(p.x, p.y - 9, radius, 0, TAU);
@@ -256,10 +339,11 @@ export class GameRenderer {
     }
   }
 
-  drawHand(x, y, side) {
+  drawHand(x, y, side, rotation = 0) {
     const c = this.ctx;
     c.save();
     c.translate(x, y);
+    c.rotate(rotation);
     c.scale(side, 1);
     c.fillStyle = '#f4ce9d';
     c.strokeStyle = '#b38750';
@@ -512,16 +596,10 @@ export class GameRenderer {
   drawBalls(engine, now, active, arms) {
     const c = this.ctx;
     if (!active) {
-      const t = this.motionReduced ? 0.3 : now / 1800;
-      for (let i = 0; i < 2; i++) {
-        const phase = t + i * 0.5;
-        const from = (Math.floor(phase) + i) % 2;
-        const f = phase % 1;
-        const position = this.getBallPosition({
-          due: 1800, created: 0, fromLanes: [from], lanes: [1 - from],
-          launchTimes: [0], ballIds: [i + 1],
-        }, 0, f * 1800);
-        this.drawBall(position.x, position.y, 12, i, f * (from ? 2 : -2));
+      const demo = this.getDemoEngine(now);
+      for (const event of demo.events) {
+        const ball = this.getBallPosition(event, 0, demo.time, demo);
+        this.drawBall(ball.x, ball.y, 12, ball.variant, ball.fraction * ball.side * 2);
       }
       return;
     }
@@ -529,11 +607,11 @@ export class GameRenderer {
     const balls = [];
     for (const event of engine.events || []) {
       const remain = event.due - time;
-      if (remain < -220) continue;
+      if (remain < -HIT_WINDOW - 1) continue;
       for (let i = 0; i < (event.lanes?.length || 0); i++) {
         // The engine creates this same ball's returning flight on its catch.
         if (event.caught?.[i]) continue;
-        balls.push(this.getBallPosition(event, i, time));
+        balls.push(this.getBallPosition(event, i, time, engine));
       }
     }
     balls.sort((a, b) => a.y - b.y);
@@ -545,15 +623,25 @@ export class GameRenderer {
     }
   }
 
-  getBallPosition(event, index, time) {
+  getBallPosition(event, index, time, engine = { events: [event] }) {
     const lane = event.lanes[index];
     const target = this.getLanePosition(lane);
-    const source = this.getLanePosition(event.fromLanes?.[index] ?? (lane ^ 1));
-    const launch = event.launchTimes?.[index] ?? event.created ?? event.due - FLIGHT;
+    const from = event.fromLanes?.[index] ?? (lane ^ 1);
+    const launch = event.launchTimes?.[index] ?? event.created ?? event.due - INITIAL_FLIGHT;
+    const variant = (event.ballIds?.[index] ?? lane + 1) - 1;
+    if (time < launch) {
+      const held = this.getArmPose(from, engine, time);
+      return { x: held.x, y: held.y - 10, fraction: 0, overdue: 0, side: target.side, variant };
+    }
+    // Capture release contact once. Subsequent catches and arm growth must not
+    // pull a ball that has already left the hand away from its fixed parabola.
+    this.flightOrigins ||= new WeakMap();
+    let origins = this.flightOrigins.get(event);
+    if (!origins) { origins = []; this.flightOrigins.set(event, origins); }
+    const source = origins[index] ||= this.getArmPose(from, engine, launch);
     const flight = Math.max(1, event.due - launch);
     const fraction = clamp((time - launch) / flight);
-    const overdue = clamp((time - event.due) / 145);
-    const variant = (event.ballIds?.[index] ?? lane + 1) - 1;
+    const overdue = clamp((time - event.due) / HIT_WINDOW);
     // Stagger the two arcs vertically so opposing balls pass each other visibly.
     const height = 135 + Math.abs(target.x - source.x) * 0.17 + (variant % 2) * 44;
     return {
