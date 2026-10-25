@@ -6,6 +6,8 @@ const GOLD = '#c29b51';
 const CREAM = '#f6efdf';
 const VERMILION = '#bd4d35';
 const TAU = Math.PI * 2;
+// Add new hands between the old ones; existing hands never slide during a toss.
+const PALM_ANGLES = [24, -8, 54, 8, 74, 40];
 
 const clamp = (v, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, v));
 
@@ -34,9 +36,7 @@ export class GameRenderer {
 
   getLanePosition(lane, arms = this.lastArms) {
     const pair = Math.floor(lane / 2);
-    const pairs = Math.max(1, Math.ceil(arms / 2));
-    const fraction = pairs === 1 ? 0.42 : pair / Math.max(1, pairs - 1);
-    const angle = (-8 + fraction * 77) * Math.PI / 180;
+    const angle = PALM_ANGLES[pair % PALM_ANGLES.length] * Math.PI / 180;
     const side = lane % 2 === 0 ? -1 : 1;
     return {
       x: 210 + side * (155 * Math.cos(angle)),
@@ -514,9 +514,14 @@ export class GameRenderer {
     if (!active) {
       const t = this.motionReduced ? 0.3 : now / 1800;
       for (let i = 0; i < 2; i++) {
-        const p = this.getLanePosition(i, 2);
-        const f = (t + i * 0.48) % 1;
-        this.drawBall(p.x + p.side * Math.sin(f * Math.PI) * 17, p.y - 4 * f * (1 - f) * 208 - 9, 12, i, f * 1.8);
+        const phase = t + i * 0.5;
+        const from = (Math.floor(phase) + i) % 2;
+        const f = phase % 1;
+        const position = this.getBallPosition({
+          due: 1800, created: 0, fromLanes: [from], lanes: [1 - from],
+          launchTimes: [0], ballIds: [i + 1],
+        }, 0, f * 1800);
+        this.drawBall(position.x, position.y, 12, i, f * (from ? 2 : -2));
       }
       return;
     }
@@ -524,26 +529,40 @@ export class GameRenderer {
     const balls = [];
     for (const event of engine.events || []) {
       const remain = event.due - time;
-      const flight = event.created > 0 ? Math.max(1, event.due - event.created) : FLIGHT;
-      if (remain > flight || remain < -220) continue;
-      const fraction = clamp(1 - remain / flight);
+      if (remain < -220) continue;
       for (let i = 0; i < (event.lanes?.length || 0); i++) {
+        // The engine creates this same ball's returning flight on its catch.
         if (event.caught?.[i]) continue;
-        const lane = event.lanes[i];
-        const p = this.getLanePosition(lane, arms);
-        const overdue = clamp(-remain / 145);
-        const x = p.x + p.side * Math.sin(fraction * Math.PI) * (12 + Math.floor(lane / 2) * 2);
-        const y = p.y - 4 * fraction * (1 - fraction) * (222 + Math.floor(lane / 2) * 3) - 10 + overdue * 38;
-        balls.push({ x, y, lane, remain, fraction, overdue });
+        balls.push(this.getBallPosition(event, i, time));
       }
     }
     balls.sort((a, b) => a.y - b.y);
     for (const ball of balls) {
       c.save();
       if (ball.overdue) c.globalAlpha = 1 - ball.overdue * 0.5;
-      this.drawBall(ball.x, ball.y, 11.7, ball.lane, ball.fraction * (ball.lane % 2 ? -2 : 2));
+      this.drawBall(ball.x, ball.y, 11.7, ball.variant, ball.fraction * ball.side * 2);
       c.restore();
     }
+  }
+
+  getBallPosition(event, index, time) {
+    const lane = event.lanes[index];
+    const target = this.getLanePosition(lane);
+    const source = this.getLanePosition(event.fromLanes?.[index] ?? (lane ^ 1));
+    const launch = event.launchTimes?.[index] ?? event.created ?? event.due - FLIGHT;
+    const flight = Math.max(1, event.due - launch);
+    const fraction = clamp((time - launch) / flight);
+    const overdue = clamp((time - event.due) / 145);
+    const variant = (event.ballIds?.[index] ?? lane + 1) - 1;
+    // Stagger the two arcs vertically so opposing balls pass each other visibly.
+    const height = 135 + Math.abs(target.x - source.x) * 0.17 + (variant % 2) * 44;
+    return {
+      x: source.x + (target.x - source.x) * fraction,
+      y: source.y + (target.y - source.y) * fraction - 10
+        - 4 * fraction * (1 - fraction) * height + overdue * 38,
+      fraction, overdue, side: target.side,
+      variant,
+    };
   }
 
   drawBall(x, y, r, variant, rotation) {

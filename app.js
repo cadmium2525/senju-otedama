@@ -1,5 +1,5 @@
-import { GameEngine, getTitle } from './game.js';
-import { GameRenderer } from './renderer.js';
+import { GameEngine, getTitle } from './game.js?v=2';
+import { GameRenderer } from './renderer.js?v=2';
 
 const $ = id => document.getElementById(id);
 const shell = $('game');
