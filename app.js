@@ -1,4 +1,4 @@
-import { GameEngine, getTitle, HIT_WINDOW, CATCHES_PER_LEVEL } from './game.js?v=3';
+import { GameEngine, getTitle, CATCHES_PER_LEVEL } from './game.js?v=3';
 import { GameRenderer } from './renderer.js?v=3';
 
 const $ = id => document.getElementById(id);
@@ -47,7 +47,7 @@ function handleGameEvent(event) {
   } else if (event.type === 'level') {
     feedback(`${event.balls}個へ。`, getTitle(event.balls), 1400, true);
   } else if (event.type === 'empty') {
-    feedback('ゆっくりで、大丈夫。', '輪が光ったらタップ', 650);
+    feedback('ゆっくりで、大丈夫。', '手に届くタイミングでタップ', 650);
   } else if (event.type === 'miss') {
     renderer.burst(event.lanes, false);
     feedback('あっ。', 'ひとつ、こぼれました。', 700, true);
@@ -65,12 +65,9 @@ function updateHud() {
   const next = engine.events.find(event => event.caught.some(value => !value));
   const remain = next ? next.due - engine.time : Infinity;
   const fingers = remain < 2000 ? next.lanes.length : 1;
-  const ready = engine.phase === 'playing' && Math.abs(remain) <= HIT_WINDOW;
-  $('fingers').lastElementChild.textContent = ready ?
-    (fingers > 1 ? `いま、${fingers}本指でタップ！` : 'いま、タップ！') :
-    (fingers > 1 ? `次は${fingers}本指。輪が光ったら` : '輪が光ったらタップ');
+  $('fingers').lastElementChild.textContent = fingers > 1 ?
+    `${fingers}本の指で、同時にタップ` : '玉が手に届くタイミングでタップ';
   $('fingers').classList.toggle('multi', fingers > 1);
-  $('fingers').classList.toggle('ready', ready);
 }
 
 function startGame() {
@@ -86,7 +83,7 @@ function startGame() {
   renderer.setResultFace?.(2);
   engine.start();
   lastTick = performance.now();
-  feedback('ゆっくり、輪を見て。', '光ったら、画面のどこでもタップ', 1300, true);
+  feedback('ゆっくり、輪を見て。', '手に届くタイミングでタップ', 1300, true);
   updateHud();
   shell.focus({ preventScroll: true });
 }
